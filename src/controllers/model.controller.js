@@ -28,7 +28,7 @@ const predictFertilizer = asyncHandler(async(req,res)=>{
     console.log(input_data)
     let options = {
         mode: 'text',
-        pythonPath: '',
+        pythonPath: '/opt/venv/bin/python3',
         pythonOptions: ['-u'], // get print results in real-time
         scriptPath: path.join(__dirname, '../ml/'),
         args: [JSON.stringify(input_data)]

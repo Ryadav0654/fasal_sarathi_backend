@@ -1,28 +1,13 @@
 version: '3.8'
 
 services:
-  mongo:
-    image: mongo
-    container_name: mongo
-    restart: always
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-
   backend:
+    # This builds the image from the Dockerfile in the current directory.
     build: .
-    container_name: fasal_sarathi_backend
+    container_name: backend_prod
     restart: always
     ports:
+      # Maps the host's port 8080 to the container's port 8080.
       - "8080:8080"
-    depends_on:
-      - mongo
     env_file:
       - .env
-    volumes:
-      - .:/app
-    command: npm start
-
-volumes:
-  mongo_data:
