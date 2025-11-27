@@ -1,103 +1,11 @@
-import { asyncHandler } from "../utils/asyncHandeler.js"
-import axios from "axios"
+import { asyncHandler } from "../utils/asyncHandeler.js";
 import { User } from "../models/user.model.js";
-import {ensureUniqueUsername} from "../utils/randomUserName.js"
 import { generateAccessAndRefereshTokens } from "../utils/generateTokens.js";
+import { registerZod, loginZod } from "../utils/validations.js";
+import jwt from "jsonwebtoken";
+import { email, success } from "zod";
 
-const googleAuthRedirect = asyncHandler(async(req,res)=>{
-    console.log("this is the first hit");
-    const redirectUrl = req?.query?.redirectUrl;
-    const redirectUri = `${process.env.BACKEND_URL}/auth/google/callback`;
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const scope = 'profile email';
-    const responseType = 'code';
-    const googleAuthUrl = `https://accounts.google.com/o/oauth2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=${responseType}&scope=${scope}&state=${encodeURIComponent(redirectUrl)}&prompt=consent`;
-    console.log(googleAuthUrl)
-    res.redirect(googleAuthUrl);
-})
-
-const googleAuthCallback= asyncHandler(async(req,res)=>{
-    console.log("this is the second hit ");
-    const redirectUrl = req.query.state;
-    console.log(redirectUrl);
-    
-    const code = req.query.code;
-    if(!code){
-        throw new Error("The code is not provided by google ");
-    }
-    try {
-        // Exchange authorization code for access token
-        const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', null, {
-        params: {
-            code,
-            client_id: process.env.GOOGLE_CLIENT_ID,
-            client_secret: process.env.GOOGLE_CLIENT_SECRET,  // Required here
-            redirect_uri: `${process.env.BACKEND_URL}/auth/google/callback`,
-            grant_type: 'authorization_code',
-        },
-        });
-     console.log("this is the third hit ")
-    //  console.log(tokenResponse.data);
-     
-    const { access_token } = tokenResponse.data;
-    if(!access_token){
-        throw new Error("access_token not recived from google ");
-        
-    }
-
-    // Get user info from Google
-    const userInfoResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: {
-        Authorization: `Bearer ${access_token}`,
-      },
-    });
-    if(!userInfoResponse){
-        throw new Error("Error while getting userInfoResponse from google api ");
-        
-    }
-    // console.log(userInfoResponse);
-    
-    const { id, email, name,picture } = userInfoResponse.data;
-
-    // Find or create user in database
-    let user = await User.findOne({ email });
-    if (!user) {
-      let username = await ensureUniqueUsername(name)
-      console.log(username)
-      user = new User({ googleId: id, email, fullName: name,username,picture });
-      await user.save();
-    }
-    console.log(user)
-    // console.log(user._id)
-
-    // Generate JWT token
-    const {accessToken,refreshToken} = await generateAccessAndRefereshTokens(user._id);
-
-    // Set cookie and redirect
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
-      sameSite: 'Strict',
-    };
-    // console.log(accessToken );
-    
-    res
-       .status(200)
-       .cookie("refreshToken", refreshToken, options)
-       .cookie('accessToken', accessToken, options)
-       .redirect(redirectUrl&&redirectUrl!=`${process.env.FRONTEND_URL}/login` ? `${decodeURIComponent(redirectUrl)}?status=success` : `${process.env.FRONTEND_URL}/?status=success`);
-  } catch (error) {
-    console.error('OAuth Error:', error);
-      res
-        .status(500)
-        .redirect(redirectUrl&&redirectUrl!=`${process.env.FRONTEND_URL}/login` ? `${decodeURIComponent(redirectUrl)}?status=failure` : `${process.env.FRONTEND_URL}/?status=failure`)
-  }
-})
-
-
-
-
-const registerUser = asyncHandler( async (req, res) => {
+const registerUser = asyncHandler(async (req, res) => {
   // get user details from frontend
   // validation - not empty
   // check if user already exists: username, email
@@ -107,50 +15,41 @@ const registerUser = asyncHandler( async (req, res) => {
   // remove password and refresh token field from response
   // check for user creation
   // return res
- console.log("this is register hit ")
 
-  const {fullName, email,  password } = req.body
-  //console.log("email: ", email);
-  let username = await ensureUniqueUsername(fullName)
-  if (
-      [fullName, email, username, password].some((field) => field?.trim() === "")
-  ) {
-      throw new Error("All fields are required")
+  console.log("this is register hit ");
+  const { data, success, error } = registerZod.safeParse(req.body);
+
+  if (!success) {
+    return res.status(400).json({
+      message: "Validation failed",
+      errors: error.flatten().fieldErrors,
+    });
   }
-
-  const existedUser = await User.findOne({
-      $or: [{ username }, { email }]
-  })
+  const { fullName, email, password } = data;
+  const existedUser = await User.findOne({ email });
 
   if (existedUser) {
-      throw new Error("User with email or username already exists")
+    return res
+      .status(400)
+      .json({ message: "User with this email already exists" });
   }
-  //console.log(req.files);
 
-  
-
-  
   const user = await User.create({
-      fullName,
-      email, 
-      password,
-      passwordSet:true,
-      username: username.toLowerCase()
-  })
+    fullName,
+    email,
+    password,
+  });
 
-  const createdUser = await User.findById(user._id).select(
-      "-password -refreshToken"
-  )
-
-  if (!createdUser) {
-      throw new Error("Something went wrong while registering the user")
+  if (!user) {
+    return res.status(500).json({
+      message: "Failed to create user. Please try again later.",
+    });
   }
 
-  return res.status(201).json(createdUser)
+  return res.status(201).json({ message: "User registered successfully!" });
+});
 
-} )
-
-const loginUser = asyncHandler(async (req, res) =>{
+const loginUser = asyncHandler(async (req, res) => {
   // req body -> data
   // username or email
   //find the user
@@ -158,106 +57,112 @@ const loginUser = asyncHandler(async (req, res) =>{
   //access and referesh token
   //send cookie
 
-  const {email, password} = req.body
-  console.log(email);
+  const { data, success } = loginZod.safeParse(req.body);
 
-  if ( !email) {
-      throw new Error("username or email is required")
+  if (!success) {
+    return res.status(400).json({
+      message: "Validation failed",
+      errors: error.flatten().fieldErrors,
+    });
   }
-  
-  // Here is an alternative of above code based on logic discussed in video:
-  // if (!(username || email)) {
-  //     throw new ApiError(400, "username or email is required")
-      
-  // }
+
+  const { email, password } = data;
 
   const user = await User.findOne({
-      email
-  })
+    email,
+  });
 
   if (!user) {
-      throw new Error("User does not exist")
+    return res.status(400).json({ message: "User doesn't exist" });
   }
-  if(user.passwordSet==false){
-    throw new Error("User password is not set , maybe initial signup from google");
-    
-  }
+
   console.log(user);
-  
 
- const isPasswordValid = await user.isPasswordCorrect(password)
-
- if (!isPasswordValid) {
-  throw new Error("Invalid user credentials")
+  const isPasswordValid = await user.isPasswordCorrect(password);
+  console.log(isPasswordValid);
+  if (!isPasswordValid) {
+    return res.status(400).json({ message: "Invalid user credentials" });
   }
 
- const {accessToken, refreshToken} = await generateAccessAndRefereshTokens(user._id)
-
-  const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+  const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(
+    user._id
+  );
 
   const options = {
-      httpOnly: true,
-      secure: true
-  }
+    httpOnly: true,
+    secure: true,
+    path: "api/v1/auth/refresh-token",
+  };
 
-  return res
-  .status(200)
-  .cookie("accessToken", accessToken, options)
-  .cookie("refreshToken", refreshToken, options)
-  .json(  {user: loggedInUser, accessToken, refreshToken})
-})
+  return res.status(200).cookie("refreshToken", refreshToken, options).json({
+    message: "User loggedIn successfully!",
+    accessToken: accessToken,
+  });
+});
 
-const logoutUser = asyncHandler(async(req, res) => {
-  await User.findByIdAndUpdate(
-      req.user._id,
-      {
-          $unset: {
-              refreshToken: 1 // this removes the field from document
-          }
+const logoutUser = asyncHandler(async (req, res) => {
+  const l = await User.findByIdAndUpdate(
+    req.user.id,
+    {
+      $unset: {
+        refreshToken: 1, // this removes the field from document
       },
-      {
-          new: true
-      }
-  )
-
+    },
+    {
+      new: true,
+    }
+  );
+  console.log("req.user",req.user.id);
+  console.log("l",l);
   const options = {
-      httpOnly: true,
-      secure: true
-  }
+    httpOnly: true,
+    secure: true,
+    path: "api/v1/auth/refresh-token",
+  };
 
   return res
-  .status(200)
-  .clearCookie("accessToken", options)
-  .clearCookie("refreshToken", options)
-  .json({})
-})
-
-const getCurrUser=asyncHandler(async(req,res)=>{
-    const userId=req.user._id;
-    if(!userId){
-        throw new Error("userId is not present");  
-    }
-    const user = await User.findById(userId)
-    if (!user) {
-        throw new Error("User does not exist")
-    }
-    const {accessToken, refreshToken} = await generateAccessAndRefereshTokens(user._id)
-
-    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
-
-    const options = {
-        httpOnly: true,
-        secure: true
-    }
-
-    return res
     .status(200)
-    .cookie("accessToken", accessToken, options)
-    .cookie("refreshToken", refreshToken, options)
-    .json(  {user: loggedInUser, accessToken, refreshToken})   
+    .clearCookie("refreshToken", options)
+    .json({ message: "user logout successfully!" });
+});
+
+const refreshTheToken = asyncHandler(async (req, res) => {
+  const {refreshToken} = req.cookies;
+
+  if (!refreshToken) {
+    return res.status(400).json({ message: "refresh token not found!" });
+  }
+
+  const decodedRefresh = jwt.verify(
+    refreshToken,
+    process.env.REFRESH_TOKEN_SECRET
+  );
+
+  if (!decodedRefresh) {
+    return res.status(400).json({ message: "refresh token not valid!" });
+  }
+
+  const userId = decodedRefresh.id;
+
+  const newAccessToken = jwt.sign(
+    { id: userId
+    },
+    process.env.ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+    }
+  );
+
+  if(!newAccessToken) {
+     return res.status(400).json({message: "refresh token not valid!"})
+  }
+
+  return res.status(200).json({newAccessToken: newAccessToken});
+});
+
+
+const validateToken = asyncHandler(async (req, res) => {
+    return res.status(200).json({success: true});
 })
 
-
-
-
-export {googleAuthCallback,googleAuthRedirect,registerUser,loginUser,logoutUser,getCurrUser};
+export { registerUser, loginUser, logoutUser, refreshTheToken, validateToken};

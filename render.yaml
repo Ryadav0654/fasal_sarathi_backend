@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: fasal-sarathi-backend
-    env: node
-    buildCommand: npm install
-    startCommand: npm start
-    plan: free

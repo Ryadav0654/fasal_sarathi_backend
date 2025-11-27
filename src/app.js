@@ -20,7 +20,12 @@ import authRouter from "./routes/auth.route.js"
 import userRouter from "./routes/user.route.js"
 app.use("/api/v1/predict",modelRouter)
 app.use("/api/v1/auth",authRouter);
-app.use("/api/v1/user",userRouter)
+app.use("/api/v1/user",userRouter);
+
+app.use(function (err, req, res, next) {
+    console.error(err.stack);
+    res.status(500).json({ message: "Internal Server Error" });
+});
 
 
 export { app }

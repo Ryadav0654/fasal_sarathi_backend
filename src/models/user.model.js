@@ -2,18 +2,8 @@ import mongoose, {Schema} from "mongoose";
 import jwt from "jsonwebtoken"
 import bcrypt from 'bcryptjs'
 
-
 const userSchema = new Schema(
     {
-        username: {
-            type: String,
-            // required: true,
-            unique: true,
-            lowercase: true,
-            trim: true, 
-            index: true,
-            sparse: true
-        },
         email: {
             type: String,
             required: true,
@@ -21,20 +11,11 @@ const userSchema = new Schema(
             lowercase: true,
             trim: true, 
         },
-        googleId:{
-            type:String,
-            unique:true,
-            sparse: true
-        },
         fullName: {
             type: String,
             required: true,
             trim: true, 
             index: true
-        },
-        picture:{
-            type:String,
-            default:"https://res.cloudinary.com/campus-connect-web/image/upload/v1723035802/defauld_profile_pic_xlsoua.png"
         },
         predictionHistory: [
             {
@@ -48,11 +29,6 @@ const userSchema = new Schema(
         refreshToken: {
             type: String
         },
-        passwordSet:{
-            type: Boolean,
-            default: false
-        }
-
     },
     {
         timestamps: true
@@ -73,10 +49,9 @@ userSchema.methods.isPasswordCorrect = async function(password){
 userSchema.methods.generateAccessToken = function(){
     return jwt.sign(
         {
-            _id: this._id,
-            email: this.email,
-            username: this.username,
-            fullName: this.fullName
+            id: this._id,
+            // email: this.email,
+            // fullName: this.fullName
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
@@ -87,8 +62,7 @@ userSchema.methods.generateAccessToken = function(){
 userSchema.methods.generateRefreshToken = function(){
     return jwt.sign(
         {
-            _id: this._id,
-            
+            id: this._id,   
         },
         process.env.REFRESH_TOKEN_SECRET,
         {
