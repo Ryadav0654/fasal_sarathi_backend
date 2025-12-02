@@ -7,20 +7,24 @@ dotenv.config()
 const app = express()
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN,
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000" || "http://localhost:5173",
     credentials: true
 }))
-app.use(express.json({limit: "16kb"}))
-app.use(express.urlencoded({extended: true, limit: "16kb"}))
+app.use(express.json({ limit: "16kb" }))
+app.use(express.urlencoded({ extended: true, limit: "16kb" }))
 app.use(express.static("public"))
 app.use(cookieParser())
 
 import modelRouter from "./routes/model.route.js"
 import authRouter from "./routes/auth.route.js"
 import userRouter from "./routes/user.route.js"
-app.use("/api/v1/predict",modelRouter)
-app.use("/api/v1/auth",authRouter);
-app.use("/api/v1/user",userRouter);
+app.use("/api/v1/predict", modelRouter)
+app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/user", userRouter);
+
+app.get("/", (req, res) => {
+    res.send("Hello from Fasal Sarathi Backend")
+})
 
 app.use(function (err, req, res, next) {
     console.error(err.stack);
