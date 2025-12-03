@@ -7,14 +7,11 @@ services:
     restart: always
     ports:
       - "8080:8080"
-    environment:
-      - PORT=8080
-      - MONGODB_URI=mongodb://mongo:27017/fasal_sarathi
-      - NODE_ENV=production
     env_file:
       - .env
     depends_on:
       - mongo
+      - ml-api
     networks:
       - fasal_network
 
@@ -26,6 +23,31 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    networks:
+      - fasal_network
+
+  ml-api:
+    build: ./ml_api
+    container_name: fasal-sarathi-ml-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - WORKERS=4  
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - fasal_network
 
